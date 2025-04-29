@@ -3,6 +3,7 @@ package com.ty.lab1;
 import java.util.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -12,11 +13,9 @@ import org.graphstream.ui.view.Viewer;
 
 public class TextGraphProcessor {
     // 记录 A -> B 的次数（有向）
-    private Map<String, Map<String, Integer>> graph = new HashMap<>();
+    private final Map<String, Map<String, Integer>> graph = new HashMap<>();
     private final double DAMPING_FACTOR = 0.85;
-    private final int MAX_ITERATIONS = 100;
-    private final double CONVERGENCE_THRESHOLD = 0.0001;
-    private Random random = new Random();
+    private final Random random = new Random();
 
     public static void main(String[] args) throws IOException {
         // 在程序入口设置UI类型
@@ -144,17 +143,22 @@ public class TextGraphProcessor {
 
     // 功能2：查询桥接词
     private void queryBridgeWords(Scanner scanner) {
+        System.out.println("\nQuery Bridge Words From Word1 To Word2");
         System.out.print("Enter word1: ");
         String word1 = scanner.nextLine().toLowerCase();
         System.out.print("Enter word2: ");
         String word2 = scanner.nextLine().toLowerCase();
 
-        if (!graph.containsKey(word1) || !graph.containsKey(word2)) {
-            System.out.println("No " + word1 + " or " + word2 + " in the graph!");
+        if (!graph.containsKey(word1)) {
+            System.out.println("No " + word1 + " in the graph!");
+            return;
+        }
+        if (!graph.containsKey(word2)) {
+            System.out.println("No " + word2 + " in the graph!");
             return;
         }
 
-        List<String> bridges = graph.get(word1).keySet().stream().filter(bridge -> graph.containsKey(bridge) && graph.get(bridge).containsKey(word2)).collect(Collectors.toList());
+        List<String> bridges = graph.get(word1).keySet().stream().filter(bridge -> graph.containsKey(bridge) && graph.get(bridge).containsKey(word2)).toList();
 
         if (bridges.isEmpty()) {
             System.out.println("No bridge words from " + word1 + " to " + word2 + "!");
@@ -173,6 +177,7 @@ public class TextGraphProcessor {
         for (int i = 0; i < inputWords.length - 1; i++) {
             output.add(inputWords[i]);
             List<String> bridges = findBridgeWords(inputWords[i], inputWords[i + 1]);
+            // 随即添加其中一个连接词
             if (!bridges.isEmpty()) {
                 output.add(bridges.get(random.nextInt(bridges.size())));
             }
@@ -187,21 +192,25 @@ public class TextGraphProcessor {
         return graph.get(word1).keySet().stream().filter(bridge -> graph.get(bridge).containsKey(word2)).collect(Collectors.toList());
     }
 
-    // 功能4：计算最短路径（Dijkstra算法）
+    // 功能4：计算单源最短路径（Dijkstra算法）
     private void calculateShortestPath(Scanner scanner) {
         System.out.print("Enter start word: ");
         String start = scanner.nextLine().toLowerCase();
         System.out.print("Enter end word: ");
         String end = scanner.nextLine().toLowerCase();
 
-        if (!graph.containsKey(start) || !graph.containsKey(end)) {
-            System.out.println("Words not in graph!");
+        if (!graph.containsKey(start)) {
+            System.out.println("\"" + start + "\"" + " not in graph!");
+            return;
+        }
+        if (!graph.containsKey(end)) {
+            System.out.println("\"" + end + "\"" + " not in graph!");
             return;
         }
 
         Map<String, Integer> distances = new HashMap<>();
         Map<String, String> predecessors = new HashMap<>();
-        PriorityQueue<String> queue = new PriorityQueue<>(Comparator.comparingInt(n -> distances.get(n)));
+        PriorityQueue<String> queue = new PriorityQueue<>(Comparator.comparingInt(distances::get));
 
         graph.keySet().forEach(node -> distances.put(node, Integer.MAX_VALUE));
         distances.put(start, 0);
@@ -216,7 +225,7 @@ public class TextGraphProcessor {
                 if (newDist < distances.getOrDefault(neighbor, Integer.MAX_VALUE)) {
                     distances.put(neighbor, newDist);
                     predecessors.put(neighbor, current);
-                    if (queue.contains(neighbor)) queue.remove(neighbor);
+                    queue.remove(neighbor);
                     queue.add(neighbor);
                 }
             });
@@ -238,49 +247,47 @@ public class TextGraphProcessor {
 
     // 功能5：PageRank计算
     private void calculatePageRank() {
-        // 使用 final 修饰符确保引用不变
-        final Map<String, Double> initialPr = new HashMap<>();
-        final double initialValue = 1.0 / graph.size();
+        // 获取图中所有节点（包括只有入边的节点）
+        final Set<String> allNodes = getAllNodes();
+        final double initialValue = 1.0 / allNodes.size();
 
-        // 在 Lambda 中使用 final 变量
-        graph.keySet().forEach(node -> initialPr.put(node, initialValue));
-        // 创建可修改的副本
-        Map<String, Double> currentPr = new HashMap<>(initialPr);
+        // 初始化所有节点的PR值
+        Map<String, Double> currentPr = allNodes.stream().collect(Collectors.toMap(node -> node, _ -> initialValue));
 
+        int MAX_ITERATIONS = 100;
         for (int i = 0; i < MAX_ITERATIONS; i++) {
-            // 创建当前迭代的PR值快照
-            final Map<String, Double> iterationPr = new HashMap<>(currentPr);
+            // 计算悬挂节点贡献（出边为空的节点）
+            final double danglingSum = allNodes
+                    .stream()
+                    .filter(node -> graph.getOrDefault(node, Collections.emptyMap()).isEmpty())
+                    .mapToDouble(currentPr::get)
+                    .sum();
+            // 此次迭代悬挂节点的均分值
+            final double distribute = DAMPING_FACTOR * danglingSum / allNodes.size();
 
-            // 计算悬挂节点贡献
-            final double danglingSum = graph.entrySet().stream().filter(e -> e.getValue().isEmpty()).mapToDouble(e -> iterationPr.get(e.getKey())).sum();
-
-            // 计算分发值（声明为final）
-            final double distribute = DAMPING_FACTOR * danglingSum / graph.size();
-
-            // 临时存储新PR值
-            Map<String, Double> newPr = new HashMap<>();
-
-            // 并行计算每个节点的PR值
-            graph.keySet().parallelStream().forEach(node -> {
-                // 计算来自其他节点的贡献
-                double incomingSum = graph.entrySet().parallelStream().filter(e -> e.getValue().containsKey(node)).mapToDouble(e -> {
-                    String source = e.getKey();
-                    int outDegree = e.getValue().values().stream().mapToInt(Integer::intValue).sum();
-                    return iterationPr.get(source) * e.getValue().get(node) / outDegree;
-                }).sum();
-
-                // 计算新PR值
-                double prValue = (1 - DAMPING_FACTOR) / graph.size() + DAMPING_FACTOR * incomingSum + distribute;
-                synchronized (newPr) {
-                    newPr.put(node, prValue);
-                }
+            // 并行计算新PR值
+            Map<String, Double> newPr = new ConcurrentHashMap<>();
+            Map<String, Double> finalCurrentPr = currentPr;
+            allNodes.parallelStream().forEach(node -> {
+                // 计算入边贡献（所有指向本节点的边）
+                double incomingSum = allNodes
+                        .stream().
+                        filter(source -> graph.getOrDefault(source, Collections.emptyMap()).containsKey(node))
+                        .mapToDouble(source -> {
+                            Map<String, Integer> sourceEdges = graph.get(source);
+                            int outDegree = sourceEdges.values().stream().mapToInt(Integer::intValue).sum();
+                            return finalCurrentPr.get(source) * sourceEdges.get(node) / outDegree;
+                        })
+                        .sum();
+                double prValue = (1 - DAMPING_FACTOR) / allNodes.size() + DAMPING_FACTOR * (incomingSum + distribute);
+                newPr.put(node, prValue);
             });
 
             // 检查收敛
             boolean converged = true;
-            for (String node : graph.keySet()) {
-                double diff = Math.abs(newPr.get(node) - currentPr.get(node));
-                if (diff > CONVERGENCE_THRESHOLD) {
+            for (String node : allNodes) {
+                double CONVERGENCE_THRESHOLD = 0.0001;
+                if (Math.abs(newPr.get(node) - currentPr.get(node)) > CONVERGENCE_THRESHOLD) {
                     converged = false;
                     break;
                 }
@@ -290,34 +297,45 @@ public class TextGraphProcessor {
             if (converged) break;
         }
 
-        // 输出结果（保持原有格式）
+        // 输出结果
         System.out.println("\nPageRank Values:");
-        currentPr.entrySet().stream().sorted((e1, e2) -> Double.compare(e2.getValue(), e1.getValue())).forEach(e -> System.out.printf("%s: %.4f%n", e.getKey(), e.getValue()));
+        currentPr.entrySet()
+                .stream()
+                .sorted((e1, e2) -> Double.compare(e2.getValue(), e1.getValue()))
+                .forEach(e -> System.out.printf("%s: %.4f%n", e.getKey(), e.getValue()));
+    }
+
+    // 获取所有节点（包括只有入边的节点）
+    private Set<String> getAllNodes() {
+        Set<String> nodes = new HashSet<>(graph.keySet());
+        graph.values().forEach(edges -> nodes.addAll(edges.keySet()));
+        return nodes;
     }
 
     // 功能6：随机游走
     private void performRandomWalk(Scanner scanner) throws IOException {
         List<String> path = new ArrayList<>();
         Set<String> visitedEdges = new HashSet<>();
-        List<String> nodes = new ArrayList<>(graph.keySet());
+        List<String> nodes = new ArrayList<>(getAllNodes());
         String current = nodes.get(random.nextInt(nodes.size()));
 
         path.add(current);
         System.out.println("Starting random walk from: " + current);
 
         while (true) {
-            Map<String, Integer> edges = graph.get(current);
+            Map<String, Integer> edges = graph.getOrDefault(current, Collections.emptyMap());
             if (edges.isEmpty()) break;
 
             List<String> candidates = new ArrayList<>();
-            edges.forEach((k, v) -> {
-                for (int i = 0; i < v; i++) candidates.add(k);
-            });
+            edges.forEach((k, _) -> candidates.add(k));
 
             String next = candidates.get(random.nextInt(candidates.size()));
-            String edge = current + "->" + next;
+            String edge = current + " -> " + next;
 
-            if (visitedEdges.contains(edge)) break;
+            if (visitedEdges.contains(edge)) {
+                System.out.println("Edge " + edge + " already visited!");
+                break;
+            }
             visitedEdges.add(edge);
 
             path.add(next);
@@ -332,7 +350,7 @@ public class TextGraphProcessor {
         }
 
         String result = String.join(" ", path);
-        try (PrintWriter writer = new PrintWriter("random_walk.txt", "UTF-8")) {
+        try (PrintWriter writer = new PrintWriter("random_walk.txt", StandardCharsets.UTF_8)) {
             writer.println(result);
         }
         System.out.println("Walk saved to random_walk.txt\nResult: " + result);
@@ -359,12 +377,10 @@ public class TextGraphProcessor {
 
         // 4. 添加带权重的边
         AtomicInteger edgeId = new AtomicInteger(0);
-        graph.forEach((source, edges) -> {
-            edges.forEach((target, weight) -> {
-                String edge = "E" + edgeId.getAndIncrement();
-                streamGraph.addEdge(edge, source, target).setAttribute("ui.label", weight);
-            });
-        });
+        graph.forEach((source, edges) -> edges.forEach((target, weight) -> {
+            String edge = "E" + edgeId.getAndIncrement();
+            streamGraph.addEdge(edge, source, target).setAttribute("ui.label", weight);
+        }));
 
         // 5. 自动布局并显示
         Viewer viewer = streamGraph.display();
@@ -380,11 +396,7 @@ public class TextGraphProcessor {
             graph.keySet().forEach(node -> writer.println("  \"" + node + "\";"));
 
             // 添加带权重的边
-            graph.forEach((source, edges) -> {
-                edges.forEach((target, weight) -> {
-                    writer.printf("  \"%s\" -> \"%s\" [label=\"%d\"];%n", source, target, weight);
-                });
-            });
+            graph.forEach((source, edges) -> edges.forEach((target, weight) -> writer.printf("  \"%s\" -> \"%s\" [label=\"%d\"];%n", source, target, weight)));
 
             writer.println("}");
             System.out.println("DOT file saved to " + filename);
