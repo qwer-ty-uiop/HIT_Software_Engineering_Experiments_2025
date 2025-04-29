@@ -343,26 +343,30 @@ public class TextGraphProcessor {
         Graph streamGraph = new SingleGraph("Text Graph");
         streamGraph.setAttribute("ui.stylesheet", "node { fill-color: #A0D8EF; size: 20px; text-size: 14; }" + "edge { fill-color: #666; text-size: 12; }");
 
-        // 2. 添加节点
-        graph.keySet().forEach(node -> {
-            streamGraph.addNode(node);
-            streamGraph.getNode(node).setAttribute("ui.label", node);
+        // 2. 收集所有节点（包括源节点和目标节点）
+        Set<String> allNodes = new HashSet<>();
+        graph.forEach((source, edges) -> {
+            allNodes.add(source);
+            allNodes.addAll(edges.keySet()); // 添加所有目标节点
         });
 
-        // 3. 添加带权重的边
+        // 3. 添加所有节点
+        allNodes.forEach(node -> {
+            if (streamGraph.getNode(node) == null) {
+                streamGraph.addNode(node).setAttribute("ui.label", node);
+            }
+        });
+
+        // 4. 添加带权重的边
         AtomicInteger edgeId = new AtomicInteger(0);
         graph.forEach((source, edges) -> {
             edges.forEach((target, weight) -> {
                 String edge = "E" + edgeId.getAndIncrement();
-                if (streamGraph.getNode(target) == null) {
-                    streamGraph.addNode(target);
-                    streamGraph.getNode(target).setAttribute("ui.label", target);
-                }
                 streamGraph.addEdge(edge, source, target).setAttribute("ui.label", weight);
             });
         });
 
-        // 4. 自动布局并显示
+        // 5. 自动布局并显示
         Viewer viewer = streamGraph.display();
         viewer.setCloseFramePolicy(Viewer.CloseFramePolicy.HIDE_ONLY);
     }
