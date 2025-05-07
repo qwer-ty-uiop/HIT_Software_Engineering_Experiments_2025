@@ -148,12 +148,13 @@ public class TextGraphProcessor {
         String word1 = scanner.nextLine().toLowerCase();
         System.out.print("Enter word2: ");
         String word2 = scanner.nextLine().toLowerCase();
+        Set<String> allNodes = getAllNodes();
 
-        if (!graph.containsKey(word1)) {
+        if (!allNodes.contains(word1)) {
             System.out.println("No " + word1 + " in the graph!");
             return;
         }
-        if (!graph.containsKey(word2)) {
+        if (!allNodes.contains(word2)) {
             System.out.println("No " + word2 + " in the graph!");
             return;
         }
@@ -198,12 +199,13 @@ public class TextGraphProcessor {
         String start = scanner.nextLine().toLowerCase();
         System.out.print("Enter end word: ");
         String end = scanner.nextLine().toLowerCase();
+        Set<String> allNodes = getAllNodes();
 
-        if (!graph.containsKey(start)) {
+        if (!allNodes.contains(start)) {
             System.out.println("\"" + start + "\"" + " not in graph!");
             return;
         }
-        if (!graph.containsKey(end)) {
+        if (!allNodes.contains(end)) {
             System.out.println("\"" + end + "\"" + " not in graph!");
             return;
         }
@@ -302,7 +304,7 @@ public class TextGraphProcessor {
         currentPr.entrySet()
                 .stream()
                 .sorted((e1, e2) -> Double.compare(e2.getValue(), e1.getValue()))
-                .forEach(e -> System.out.printf("%s: %.4f%n", e.getKey(), e.getValue()));
+                .forEach(e -> System.out.printf("%s: %f\n", e.getKey(), e.getValue()));
     }
 
     // 获取所有节点（包括只有入边的节点）
