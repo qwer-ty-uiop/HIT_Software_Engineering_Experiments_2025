@@ -280,16 +280,20 @@ public class TextGraphProcessor {
     String start = scanner.nextLine().toLowerCase();
     System.out.print("Enter end word: ");
     String end = scanner.nextLine().toLowerCase();
-
-    if (!graph.containsKey(start)) {
+    Set<String> allNodes = getAllNodes();
+    if (!allNodes.contains(start)) {
       System.out.println("\"" + start + "\"" + " not in graph!");
       return;
     }
-    if (!graph.containsKey(end)) {
+    if (!allNodes.contains(end)) {
       System.out.println("\"" + end + "\"" + " not in graph!");
       return;
     }
-
+    if (start.equals(end)) {
+      System.out.println("Shortest path: " + start + " → " + end);
+      System.out.println("Path length: " + 0);
+      return;
+    }
     Map<String, Integer> distances = new HashMap<>();
     final Map<String, String> predecessors = new HashMap<>();
     PriorityQueue<String> queue = new PriorityQueue<>(Comparator.comparingInt(distances::get));
